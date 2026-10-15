@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: control-plane
+  namespace: cloudpulse
+  labels:
+    app: control-plane
+spec:
+  type: ClusterIP
+  selector:
+    app: control-plane
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: collector-agent
+  namespace: cloudpulse
+  labels:
+    app: collector-agent
+spec:
+  clusterIP: None # headless: one endpoint per node for Prometheus
+  selector:
+    app: collector-agent
+  ports:
+    - name: metrics
+      port: 9100
+      targetPort: metrics
+

@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cloudpulse
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloudpulse-config
+  namespace: cloudpulse
+data:
+  CP_REDIS_URL: redis://redis.cloudpulse.svc.cluster.local:6379/0
+  CP_GEMINI_MODEL: gemini-2.5-flash
+  CP_RATE_LIMIT_CAPACITY: "200"
+  CP_RATE_LIMIT_REFILL_PER_SEC: "100"
+  CP_DEDUP_TTL_SECONDS: "300"
+  CONTROL_PLANE_URL: http://control-plane.cloudpulse.svc.cluster.local:8000
+  SAMPLE_INTERVAL: 5s
+  CPU_THRESHOLD: "85"
+  MEM_USED_THRESHOLD: "90"
+  IOWAIT_THRESHOLD: "20"
+---
+# Replace the placeholders (or use your secret manager / external-secrets) before applying.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cloudpulse-secrets
+  namespace: cloudpulse
+type: Opaque
+stringData:
+  CP_DATABASE_URL: postgresql+asyncpg://cloudpulse:CHANGE_ME@postgres.cloudpulse.svc.cluster.local:5432/cloudpulse
+  CP_GEMINI_API_KEY: CHANGE_ME
+

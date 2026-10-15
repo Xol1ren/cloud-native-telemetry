@@ -1,0 +1,33 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: control-plane
+  namespace: cloudpulse
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: 2m
+    nginx.ingress.kubernetes.io/limit-rps: "200"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [cloudpulse.example.com]
+      secretName: cloudpulse-tls
+  rules:
+    - host: cloudpulse.example.com
+      http:
+        paths:
+          - path: /api/
+            pathType: Prefix
+            backend:
+              service:
+                name: control-plane
+                port:
+                  name: http
+          - path: /healthz/
+            pathType: Prefix
+            backend:
+              service:
+                name: control-plane
+                port:
+                  name: http
+

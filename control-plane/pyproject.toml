@@ -1,0 +1,19 @@
+[project]
+name = "cloudpulse-control-plane"
+version = "0.1.0"
+description = "CloudPulse telemetry control plane"
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["B008"]  # FastAPI's Depends() in defaults is the idiomatic pattern
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["."]
+

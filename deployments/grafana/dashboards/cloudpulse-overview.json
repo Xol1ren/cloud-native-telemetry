@@ -1,0 +1,95 @@
+{
+  "id": null,
+  "uid": "cloudpulse-overview",
+  "title": "CloudPulse Overview",
+  "tags": ["cloudpulse"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": { "from": "now-30m", "to": "now" },
+  "panels": [
+    {
+      "id": 1, "type": "timeseries", "title": "CPU usage (%)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 }, "overrides": [] },
+      "targets": [
+        { "expr": "cloudpulse_cpu_usage_percent", "legendFormat": "{{cpu}}", "refId": "A" },
+        { "expr": "cloudpulse_cpu_iowait_percent{cpu=\"all\"}", "legendFormat": "iowait (all)", "refId": "B" }
+      ]
+    },
+    {
+      "id": 2, "type": "timeseries", "title": "Memory",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "targets": [
+        { "expr": "cloudpulse_memory_total_bytes", "legendFormat": "total", "refId": "A" },
+        { "expr": "cloudpulse_memory_available_bytes", "legendFormat": "available", "refId": "B" },
+        { "expr": "cloudpulse_memory_cached_bytes", "legendFormat": "cached", "refId": "C" },
+        { "expr": "cloudpulse_memory_buffers_bytes", "legendFormat": "buffers", "refId": "D" }
+      ]
+    },
+    {
+      "id": 3, "type": "timeseries", "title": "Disk throughput",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "Bps" }, "overrides": [] },
+      "targets": [
+        { "expr": "rate(cloudpulse_disk_read_bytes_total[1m])", "legendFormat": "read {{device}}", "refId": "A" },
+        { "expr": "rate(cloudpulse_disk_written_bytes_total[1m])", "legendFormat": "write {{device}}", "refId": "B" }
+      ]
+    },
+    {
+      "id": 4, "type": "timeseries", "title": "Network throughput",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "Bps" }, "overrides": [] },
+      "targets": [
+        { "expr": "rate(cloudpulse_network_receive_bytes_total[1m])", "legendFormat": "rx {{interface}}", "refId": "A" },
+        { "expr": "rate(cloudpulse_network_transmit_bytes_total[1m])", "legendFormat": "tx {{interface}}", "refId": "B" }
+      ]
+    },
+    {
+      "id": 5, "type": "timeseries", "title": "Incident rate (events/min)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        { "expr": "sum by (kind) (rate(cloudpulse_incidents_ingested_total[5m])) * 60", "legendFormat": "stored {{kind}}", "refId": "A" },
+        { "expr": "rate(cloudpulse_incidents_deduplicated_total[5m]) * 60", "legendFormat": "deduplicated", "refId": "B" },
+        { "expr": "sum by (kind) (rate(cloudpulse_anomalies_detected_total[5m])) * 60", "legendFormat": "detected by agent {{kind}}", "refId": "C" }
+      ]
+    },
+    {
+      "id": 6, "type": "timeseries", "title": "API latency (p50 / p95 / p99)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum by (le) (rate(cloudpulse_http_request_duration_seconds_bucket[5m])))", "legendFormat": "p50", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, sum by (le) (rate(cloudpulse_http_request_duration_seconds_bucket[5m])))", "legendFormat": "p95", "refId": "B" },
+        { "expr": "histogram_quantile(0.99, sum by (le) (rate(cloudpulse_http_request_duration_seconds_bucket[5m])))", "legendFormat": "p99", "refId": "C" }
+      ]
+    },
+    {
+      "id": 7, "type": "timeseries", "title": "API request rate by route",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "targets": [
+        { "expr": "sum by (path, status) (rate(cloudpulse_http_request_duration_seconds_count[1m]))", "legendFormat": "{{path}} {{status}}", "refId": "A" }
+      ]
+    },
+    {
+      "id": 8, "type": "stat", "title": "Agent push failures",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "sum(cloudpulse_agent_push_failures_total)", "refId": "A" }
+      ]
+    }
+  ]
+}
+
