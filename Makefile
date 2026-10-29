@@ -15,7 +15,7 @@ $(VENV)/bin/pytest: $(CP_DIR)/requirements-dev.txt
 	$(VENV)/bin/pip install -q -r $(CP_DIR)/requirements-dev.txt
 
 test: $(VENV)/bin/pytest ## Run Go and Python test suites
-	cd $(AGENT_DIR) && go vet ./... && go test -race ./...
+	cd $(AGENT_DIR) && go vet ./... && CCACHE_DISABLE=1 go test -race ./...
 	cd $(CP_DIR) && .venv/bin/python -m pytest -q
 
 lint: $(VENV)/bin/pytest

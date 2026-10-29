@@ -1,0 +1,47 @@
+groups:
+  - name: cloudpulse_alerts
+    rules:
+      - alert: HostHighCPUUsage
+        expr: cloudpulse_cpu_usage_percent{cpu="all"} > 85
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host CPU utilization critical on {{ $labels.instance }}"
+          description: "Aggregate CPU usage has exceeded 85% for more than 2 minutes."
+
+      - alert: HostHighMemoryPressure
+        expr: cloudpulse_memory_used_percent > 90
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host memory pressure critical on {{ $labels.instance }}"
+          description: "Memory utilization has exceeded 90% for more than 2 minutes."
+
+      - alert: HostHighIOWait
+        expr: cloudpulse_cpu_iowait_percent{cpu="all"} > 20
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host I/O wait spike on {{ $labels.instance }}"
+          description: "I/O wait has exceeded 20%, indicating storage bottleneck or page-cache thrash."
+
+      - alert: AgentPushFailures
+        expr: rate(cloudpulse_agent_push_failures_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Collector agent dropping telemetry push events"
+          description: "Collector agent push client is failing to deliver batches to the control plane."
+
+      - alert: ControlPlaneGeminiDegraded
+        expr: rate(cloudpulse_gemini_requests_total{status=~"fallback|timeout"}[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AI root-cause analyzer operating in degraded fallback mode"
+          description: "Gemini requests are timing out or encountering rate limits; heuristic fallbacks active."
