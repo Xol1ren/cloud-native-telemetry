@@ -60,18 +60,29 @@ class GeminiAnalyzer:
         from google.genai import types
 
         client = self._get_client()
-        resp = await asyncio.wait_for(
-            client.aio.models.generate_content(
+
+        async def _call_model():
+            config = types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=Diagnosis,
+                temperature=0.2,
+            )
+            prompt = build_prompt(req)
+            if hasattr(client, "aio") and hasattr(client.aio, "models"):
+                return await client.aio.models.generate_content(
+                    model=self.model,
+                    contents=prompt,
+                    config=config,
+                )
+            # Offload blocking calls to thread pool to prevent blocking the async event loop
+            return await asyncio.to_thread(
+                client.models.generate_content,
                 model=self.model,
-                contents=build_prompt(req),
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=Diagnosis,
-                    temperature=0.2,
-                ),
-            ),
-            timeout=self.timeout,
-        )
+                contents=prompt,
+                config=config,
+            )
+
+        resp = await asyncio.wait_for(_call_model(), timeout=self.timeout)
         return Diagnosis.model_validate_json(resp.text)
 
 

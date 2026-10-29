@@ -44,6 +44,11 @@ DEDUPLICATED = Counter(
     "cloudpulse_incidents_deduplicated_total", "Anomaly events suppressed as duplicates"
 )
 ANALYSES = Counter("cloudpulse_analyses_total", "Incident analyses", ["source"])
+GEMINI_REQUESTS = Counter(
+    "cloudpulse_gemini_requests_total",
+    "LLM root-cause analysis requests",
+    ["status"],
+)
 
 
 async def _init_schema(engine, attempts: int = 10) -> None:
@@ -181,10 +186,22 @@ def create_app() -> FastAPI:
         try:
             diagnosis = await analyzer.diagnose(body)
             ANALYSES.labels("gemini").inc()
+            GEMINI_REQUESTS.labels(status="success").inc()
             return AnalyzeResponse(node=body.node, source="gemini", diagnosis=diagnosis)
+        except TimeoutError as exc:
+            logger.warning("gemini analysis timed out; using fallback: %s", exc)
+            ANALYSES.labels("fallback").inc()
+            GEMINI_REQUESTS.labels(status="timeout").inc()
+            return AnalyzeResponse(
+                node=body.node,
+                source="fallback",
+                diagnosis=fallback_diagnosis(body),
+                degraded_reason="TimeoutError",
+            )
         except Exception as exc:
             logger.warning("gemini analysis failed (%s); using fallback", type(exc).__name__)
             ANALYSES.labels("fallback").inc()
+            GEMINI_REQUESTS.labels(status="fallback").inc()
             return AnalyzeResponse(
                 node=body.node,
                 source="fallback",

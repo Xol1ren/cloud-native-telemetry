@@ -18,6 +18,9 @@ async def test_analyze_uses_gemini(client, analyzer):
     assert data["degraded_reason"] is None
     assert len(analyzer.calls) == 1
 
+    m = await client.get("/metrics")
+    assert 'cloudpulse_gemini_requests_total{status="success"}' in m.text
+
 
 @pytest.mark.parametrize(
     ("kinds", "severity"),
@@ -29,7 +32,7 @@ async def test_analyze_uses_gemini(client, analyzer):
     ],
 )
 async def test_analyze_falls_back_on_gemini_error(client, analyzer, kinds, severity):
-    analyzer.error = TimeoutError("boom")
+    analyzer.error = TimeoutError("request timed out")
     r = await client.post("/api/v1/incidents/analyze", json=req(*kinds))
     assert r.status_code == 200
     data = r.json()
@@ -37,6 +40,22 @@ async def test_analyze_falls_back_on_gemini_error(client, analyzer, kinds, sever
     assert data["degraded_reason"] == "TimeoutError"
     assert data["diagnosis"]["severity"] == severity
     assert data["diagnosis"]["recommendations"]
+
+    m = await client.get("/metrics")
+    assert 'cloudpulse_gemini_requests_total{status="timeout"}' in m.text
+
+
+async def test_analyze_falls_back_on_rate_limit_or_unresponsive(client, analyzer):
+    analyzer.error = RuntimeError("ResourceExhausted: 429 quota exceeded")
+    r = await client.post("/api/v1/incidents/analyze", json=req("cpu_spike"))
+    assert r.status_code == 200
+    data = r.json()
+    assert data["source"] == "fallback"
+    assert data["degraded_reason"] == "RuntimeError"
+    assert data["diagnosis"]["severity"] == "medium"
+
+    m = await client.get("/metrics")
+    assert 'cloudpulse_gemini_requests_total{status="fallback"}' in m.text
 
 
 async def test_analyze_validation(client):
@@ -83,8 +102,27 @@ async def test_gemini_analyzer_parses_structured_response(monkeypatch):
     assert d.root_cause == "x" and d.severity.value == "low"
 
 
+async def test_gemini_analyzer_sync_fallback_offload():
+    class Resp:
+        text = (
+            '{"root_cause":"sync_offload","severity":"medium",'
+            '"confidence":0.7,"recommendations":["step1"]}'
+        )
+
+    class SyncModels:
+        def generate_content(self, **kwargs):
+            return Resp()
+
+    class SyncClient:
+        models = SyncModels()
+
+    a = GeminiAnalyzer("key", "model", 5)
+    a._client = SyncClient()
+    d = await a.diagnose(AnalyzeRequest.model_validate(req("cpu_spike")))
+    assert d.root_cause == "sync_offload"
+
+
 async def test_gemini_malformed_output_triggers_fallback(client, analyzer):
-    # Malformed model output raises a pydantic ValidationError inside diagnose.
     from pydantic import ValidationError
 
     from app.schemas import Diagnosis
