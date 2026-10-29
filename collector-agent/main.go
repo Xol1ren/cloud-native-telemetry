@@ -53,7 +53,7 @@ func main() {
 	listen := env("LISTEN_ADDR", ":9100")
 	node, _ := os.Hostname()
 	node = env("NODE_NAME", node)
-	interval := envDur("SAMPLE_INTERVAL", 5*time.Second)
+	interval := envDur("SAMPLE_INTERVAL", 1*time.Second)
 	cpURL := env("CONTROL_PLANE_URL", "") // e.g. http://control-plane:8000
 
 	th := anomaly.DefaultThresholds()
@@ -66,7 +66,8 @@ func main() {
 	det := anomaly.NewDetector(th)
 	fs := procfs.FS{Root: procRoot}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	// Capture both SIGINT and SIGTERM for graceful shutdown
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	var pusher *push.Client
@@ -81,7 +82,16 @@ func main() {
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", exp.Handler())
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
-	srv := &http.Server{Addr: listen, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+
+	srv := &http.Server{
+		Addr:              listen,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       30 * time.Second,
+	}
+
 	go func() {
 		slog.Info("collector listening", "addr", listen, "proc", procRoot, "node", node, "push", cpURL != "")
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -90,39 +100,60 @@ func main() {
 		}
 	}()
 
-	prev, err := fs.Read()
-	if err != nil {
+	var prev, cur procfs.Snapshot
+	if err := fs.ReadInto(&prev); err != nil {
 		slog.Error("initial proc read failed", "err", err)
 		os.Exit(1)
 	}
+
+	// Reusable usage slice to avoid allocations during sample loop
+	var usage []exporter.Usage
 	tick := time.NewTicker(interval)
 	defer tick.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
-			slog.Info("shutting down")
+			slog.Info("initiating graceful shutdown on signal (SIGINT/SIGTERM)")
+			stop() // stop catching signals so second signal triggers immediate exit
+
+			// Gracefully drain HTTP server connections
 			sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			_ = srv.Shutdown(sctx)
-			cancel()
-			if pusher != nil {
-				<-pusher.Done()
+			if err := srv.Shutdown(sctx); err != nil {
+				slog.Error("http server graceful shutdown error", "err", err)
+				_ = srv.Close()
+			} else {
+				slog.Info("http server gracefully stopped")
 			}
+			cancel()
+
+			// Gracefully drain pending events in anomaly push client
+			if pusher != nil {
+				slog.Info("draining pending anomaly push batches")
+				select {
+				case <-pusher.Done():
+					slog.Info("anomaly push client drained successfully")
+				case <-time.After(3 * time.Second):
+					slog.Warn("timeout waiting for anomaly pusher to drain")
+				}
+			}
+			slog.Info("collector agent shutdown complete")
 			return
+
 		case now := <-tick.C:
-			cur, err := fs.Read()
-			if err != nil {
+			if err := fs.ReadInto(&cur); err != nil {
 				slog.Warn("proc read failed", "err", err)
 				continue
 			}
-			usage := make([]exporter.Usage, 0, len(cur.CPUs))
-			prevByName := make(map[string]procfs.CPUStat, len(prev.CPUs))
-			for _, c := range prev.CPUs {
-				prevByName[c.Name] = c
-			}
+
+			usage = usage[:0]
 			for _, c := range cur.CPUs {
-				if p, ok := prevByName[c.Name]; ok {
-					b, w := procfs.CPUUsage(p, c)
-					usage = append(usage, exporter.Usage{Name: c.Name, BusyPct: b, IOWaitPct: w})
+				for _, p := range prev.CPUs {
+					if p.Name == c.Name {
+						b, w := procfs.CPUUsage(p, c)
+						usage = append(usage, exporter.Usage{Name: c.Name, BusyPct: b, IOWaitPct: w})
+						break
+					}
 				}
 			}
 			exp.Update(exporter.State{Snap: cur, Usage: usage})
@@ -140,7 +171,9 @@ func main() {
 					}
 				}
 			}
-			prev = cur
+
+			// Swap snapshots to retain capacity in next iteration
+			prev, cur = cur, prev
 		}
 	}
 }
