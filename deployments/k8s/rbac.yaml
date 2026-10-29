@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: collector-agent
+  namespace: cloudpulse
+  labels:
+    app.kubernetes.io/name: collector-agent
+    app.kubernetes.io/part-of: cloudpulse
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: control-plane
+  namespace: cloudpulse
+  labels:
+    app.kubernetes.io/name: control-plane
+    app.kubernetes.io/part-of: cloudpulse
+automountServiceAccountToken: false

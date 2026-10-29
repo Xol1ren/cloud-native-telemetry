@@ -4,7 +4,8 @@ metadata:
   name: collector-agent
   namespace: cloudpulse
   labels:
-    app: collector-agent
+    app.kubernetes.io/name: collector-agent
+    app.kubernetes.io/part-of: cloudpulse
 spec:
   selector:
     matchLabels:
@@ -17,15 +18,24 @@ spec:
     metadata:
       labels:
         app: collector-agent
+        app.kubernetes.io/name: collector-agent
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "9100"
         prometheus.io/path: /metrics
     spec:
+      serviceAccountName: collector-agent
+      automountServiceAccountToken: false
       hostPID: true
       tolerations:
         - operator: Exists
       priorityClassName: system-node-critical
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: collector
           image: ghcr.io/xol1ren/cloudpulse-collector:latest
@@ -49,26 +59,32 @@ spec:
             allowPrivilegeEscalation: false
             runAsNonRoot: true
             runAsUser: 65534
+            runAsGroup: 65534
             capabilities:
-              drop: ["ALL"]
+              drop:
+                - ALL
           resources:
             requests:
-              cpu: 25m
+              cpu: 10m
               memory: 16Mi
             limits:
-              cpu: 200m
-              memory: 64Mi
+              cpu: 100m
+              memory: 48Mi
           readinessProbe:
             httpGet:
               path: /healthz
               port: metrics
             periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
           livenessProbe:
             httpGet:
               path: /healthz
               port: metrics
             initialDelaySeconds: 5
-            periodSeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 2
+            failureThreshold: 3
           volumeMounts:
             - name: proc
               mountPath: /host/proc
@@ -78,4 +94,3 @@ spec:
           hostPath:
             path: /proc
             type: Directory
-
