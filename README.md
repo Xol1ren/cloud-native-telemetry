@@ -194,3 +194,9 @@ make clean        # Cleans compiled binaries, caches, and venv artifacts
 ```
 
 Continuous Integration via GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) validates Go formatting/vetting/tests, Python linting/tests, Docker multi-stage builds, and verifies the collector container image size remains strictly under 15 MB.
+
+---
+
+## License
+
+Apache License 2.0. See LICENSE for details.
