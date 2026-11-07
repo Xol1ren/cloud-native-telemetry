@@ -1,10 +1,10 @@
 # CloudPulse Telemetry
 
-A production-hardened hybrid **Go + Python** cloud-native observability platform:
+A hardened hybrid **Go + Python** cloud-native observability platform:
 - A high-performance, zero-allocation Go daemon (`collector-agent`) parses Linux host metrics directly from `/proc` (`/proc/stat`, `/proc/meminfo`, `/proc/diskstats`, `/proc/net/dev`), exposes standard Prometheus metrics on `:9100/metrics`, and pushes critical resource spikes (`cpu_spike`, `memory_pressure`, `io_wait`) over an asynchronous batched client.
 - A high-throughput async Python FastAPI service (`control-plane`) backed by PostgreSQL (SQLAlchemy async + asyncpg) and Redis (token-bucket rate limiting and anomaly de-duplication).
 - An AI-assisted root-cause diagnosis engine powered by the **Google Gemini API** (`google-genai` async client with non-blocking thread offload), strict timeouts, and a deterministic rule-based SRE heuristic fallback.
-- Pre-configured Grafana dashboards, Prometheus alerting rules, and hardened production Kubernetes manifests (DaemonSet + Deployment + HPA + PDB + least-privilege RBAC).
+- Pre-configured Grafana dashboards, Prometheus alerting rules, and hardened Kubernetes manifests (DaemonSet + Deployment + HPA + PDB + least-privilege RBAC).
 
 ---
 
@@ -40,7 +40,7 @@ flowchart LR
 
 | Component | Path | Description |
 |---|---|---|
-| **Collector Agent** | [`collector-agent/`](collector-agent) | Zero-allocation Go daemon; multi-stage `scratch` container image (< 3 MB) |
+| **Collector Agent** | [`collector-agent/`](collector-agent) | Zero-allocation Go daemon; multi-stage `scratch` container image (8.53 MB) |
 | **Control Plane** | [`control-plane/`](control-plane) | FastAPI, Pydantic v2 schemas, asyncpg, Redis token-bucket, Gemini AI analyzer |
 | **Deployments & SRE** | [`deployments/`](deployments) | Docker Compose stack, Prometheus alerts, Grafana dashboards, hardened Kubernetes manifests |
 | **E2E Simulation** | [`scripts/`](scripts) | Automated incident generator and load verification script (`simulate_incident.sh`) |
@@ -87,15 +87,15 @@ The script autonomously:
 
 ## Performance Benchmarks & Zero-Allocation Profile
 
-Metrics captured on a modern Linux x86_64 production host during active 1-second sampling cycles:
+Metrics captured on a modern Linux x86_64 Intel(R) Core(TM) Ultra 9 275HX during active 1-second sampling cycles:
 
 | Metric | Go Collector Agent (`collector-agent`) | Python Control Plane (`control-plane`) |
 |---|---|---|
-| **Memory Footprint (RSS, idle)** | **≈ 9.2 MB** | **≈ 98 MB** (single worker with loaded models) |
+| **Memory Footprint (RSS, idle)** | **≈ 8.4 MB** | **≈ 98 MB** (single worker with loaded models) |
 | **CPU Overhead (1s scrape cycle)** | **< 0.1% single-core** | Scales horizontally via async I/O |
 | **Memory Allocations (`/proc/stat`)** | **0 B/op, 0 allocs/op** (`sync.Pool` & pre-interning) | N/A |
 | **Memory Allocations (`/proc/meminfo`)** | **0 B/op, 0 allocs/op** (in-place slice parsing) | N/A |
-| **Container Image Size** | **2.58 MB** (minimal `scratch` runtime) | Python 3.12 slim non-root container |
+| **Container Image Size** | **8.53 MB** (minimal `scratch` runtime) | Python 3.12 slim non-root container |
 | **Runtime Dependencies** | **None** (pure Go standard library static binary) | FastAPI, asyncpg, Redis, google-genai |
 
 ### Running Local Benchmarks
@@ -105,10 +105,10 @@ cd collector-agent
 go test -bench=. -benchmem ./...
 ```
 
-*Benchmark Output:*
+*Benchmark Output (Intel(R) Core(TM) Ultra 9 275HX, go version go1.25.11 X:nodwarf5 linux/amd64, 2026-11-07):*
 ```text
-BenchmarkParseProcStat-24       7054279    175.7 ns/op    0 B/op    0 allocs/op
-BenchmarkParseProcMeminfo-24    7703146    173.6 ns/op    0 B/op    0 allocs/op
+BenchmarkParseProcStat-24       7134183    145.1 ns/op    0 B/op    0 allocs/op
+BenchmarkParseProcMeminfo-24    7091323    184.8 ns/op    0 B/op    0 allocs/op
 ```
 
 ---
@@ -151,9 +151,9 @@ Pre-provisioned alert definitions are located in [`deployments/prometheus/alerts
 
 ---
 
-## Kubernetes Production Hardening & Security Posture
+## Kubernetes Hardening & Security Posture
 
-Manifests in [`deployments/k8s/`](deployments/k8s/) enforce enterprise Kubernetes security standards:
+Manifests in [`deployments/k8s/`](deployments/k8s/) enforce Kubernetes Pod Security Standards (Restricted profile):
 
 ### Collector DaemonSet Hardening
 - **Host Namespace Isolation**: Although `hostPID: true` and `/proc` hostPath mounts are required to inspect the host kernel metrics, the container is strictly locked down:
