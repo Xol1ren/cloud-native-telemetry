@@ -1,7 +1,7 @@
 # CloudPulse Telemetry
 
 A hardened hybrid **Go + Python** cloud-native observability platform:
-- A high-performance, zero-allocation Go daemon (`collector-agent`) parses Linux host metrics directly from `/proc` (`/proc/stat`, `/proc/meminfo`, `/proc/diskstats`, `/proc/net/dev`), exposes standard Prometheus metrics on `:9100/metrics`, and pushes critical resource spikes (`cpu_spike`, `memory_pressure`, `io_wait`) over an asynchronous batched client.
+- A high-performance Go daemon (`collector-agent`) with zero-allocation `/proc` parsers extracts Linux host metrics directly from `/proc` (`/proc/stat`, `/proc/meminfo`, `/proc/diskstats`, `/proc/net/dev`), exposes standard Prometheus metrics on `:9100/metrics`, and pushes critical resource spikes (`cpu_spike`, `memory_pressure`, `io_wait`) over an asynchronous batched client.
 - A high-throughput async Python FastAPI service (`control-plane`) backed by PostgreSQL (SQLAlchemy async + asyncpg) and Redis (token-bucket rate limiting and anomaly de-duplication).
 - An AI-assisted root-cause diagnosis engine powered by the **Google Gemini API** (`google-genai` async client with non-blocking thread offload), strict timeouts, and a deterministic rule-based SRE heuristic fallback.
 - Pre-configured Grafana dashboards, Prometheus alerting rules, and hardened Kubernetes manifests (DaemonSet + Deployment + HPA + PDB + least-privilege RBAC).
@@ -40,7 +40,7 @@ flowchart LR
 
 | Component | Path | Description |
 |---|---|---|
-| **Collector Agent** | [`collector-agent/`](collector-agent) | Zero-allocation Go daemon; multi-stage `scratch` container image (8.53 MB) |
+| **Collector Agent** | [`collector-agent/`](collector-agent) | Go daemon with zero-allocation `/proc` parsers; multi-stage `scratch` container image (8.55 MB on disk, 2.59 MB content size) |
 | **Control Plane** | [`control-plane/`](control-plane) | FastAPI, Pydantic v2 schemas, asyncpg, Redis token-bucket, Gemini AI analyzer |
 | **Deployments & SRE** | [`deployments/`](deployments) | Docker Compose stack, Prometheus alerts, Grafana dashboards, hardened Kubernetes manifests |
 | **E2E Simulation** | [`scripts/`](scripts) | Automated incident generator and load verification script (`simulate_incident.sh`) |
@@ -85,30 +85,30 @@ The script autonomously:
 
 ---
 
-## Performance Benchmarks & Zero-Allocation Profile
+## Performance Benchmarks & Host Metric Parsing Profile
 
 Metrics captured on a modern Linux x86_64 Intel(R) Core(TM) Ultra 9 275HX during active 1-second sampling cycles:
 
 | Metric | Go Collector Agent (`collector-agent`) | Python Control Plane (`control-plane`) |
 |---|---|---|
-| **Memory Footprint (RSS, idle)** | **≈ 8.4 MB** | **≈ 98 MB** (single worker with loaded models) |
-| **CPU Overhead (1s scrape cycle)** | **< 0.1% single-core** | Scales horizontally via async I/O |
+| **Memory Footprint (RSS, idle)** | **≈ 8.4 MB** (standalone) / **≈ 3.3 MiB** (container) | **≈ 160.7 MiB** (measured via `docker stats`) |
+| **CPU Overhead (1s scrape cycle)** | **0.02% single-core** (measured via `docker stats`) | **0.11%** (measured via `docker stats`) |
 | **Memory Allocations (`/proc/stat`)** | **0 B/op, 0 allocs/op** (`sync.Pool` & pre-interning) | N/A |
 | **Memory Allocations (`/proc/meminfo`)** | **0 B/op, 0 allocs/op** (in-place slice parsing) | N/A |
-| **Container Image Size** | **8.53 MB** (minimal `scratch` runtime) | Python 3.12 slim non-root container |
+| **Container Image Size** | **8.55 MB on disk** / **2.59 MB content size** (`cp-check`) | Python 3.12 slim non-root container |
 | **Runtime Dependencies** | **None** (pure Go standard library static binary) | FastAPI, asyncpg, Redis, google-genai |
 
 ### Running Local Benchmarks
 
 ```bash
 cd collector-agent
-go test -bench=. -benchmem ./...
+go test -bench=. -benchmem -count=10 ./...
 ```
 
-*Benchmark Output (Intel(R) Core(TM) Ultra 9 275HX, go version go1.25.11 X:nodwarf5 linux/amd64, 2026-11-07):*
+*Benchmark Output (Intel(R) Core(TM) Ultra 9 275HX, go version go1.25.11 X:nodwarf5 linux/amd64, 2026-11-07, medians of 10 runs):*
 ```text
-BenchmarkParseProcStat-24       7134183    145.1 ns/op    0 B/op    0 allocs/op
-BenchmarkParseProcMeminfo-24    7091323    184.8 ns/op    0 B/op    0 allocs/op
+BenchmarkParseProcStat-24       8037390    166.8 ns/op    0 B/op    0 allocs/op
+BenchmarkParseProcMeminfo-24    7733954    153.8 ns/op    0 B/op    0 allocs/op
 ```
 
 ---
