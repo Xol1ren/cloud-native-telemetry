@@ -100,7 +100,7 @@ The script autonomously:
 
 ## Performance Benchmarks & Zero-Allocation Profile
 
-Metrics captured on a modern Linux x86_64 production host during active 1-second sampling cycles:
+Metrics captured on Linux x86_64 during active 1-second sampling cycles:
 
 | Metric | Go Collector Agent (`collector-agent`) | Python Control Plane (`control-plane`) |
 |---|---|---|
@@ -113,6 +113,8 @@ Metrics captured on a modern Linux x86_64 production host during active 1-second
 
 ### Running Local Benchmarks
 
+Benchmarks require Go 1.23+ (`go 1.23` in `collector-agent/go.mod`; results below recorded on Go 1.25 on Linux x86_64):
+
 ```bash
 cd collector-agent
 go test -bench=. -benchmem ./...
@@ -120,8 +122,8 @@ go test -bench=. -benchmem ./...
 
 *Benchmark Output:*
 ```text
-BenchmarkParseProcStat-24       7054279    175.7 ns/op    0 B/op    0 allocs/op
-BenchmarkParseProcMeminfo-24    7703146    173.6 ns/op    0 B/op    0 allocs/op
+BenchmarkParseProcStat-24       7390332    174.3 ns/op    0 B/op    0 allocs/op
+BenchmarkParseProcMeminfo-24    7170777    162.8 ns/op    0 B/op    0 allocs/op
 ```
 
 ---
