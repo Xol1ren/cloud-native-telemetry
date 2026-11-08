@@ -1,10 +1,12 @@
-# CloudPulse Telemetry
+# cloud-native-telemetry
 
-A production-hardened hybrid **Go + Python** cloud-native observability platform:
+> **Note:** The internal project codename and metric prefix is `cloudpulse` (e.g. `cloudpulse_cpu_usage_percent`), preserved for dashboard and alert compatibility.
+
+A hybrid **Go + Python** cloud-native observability platform:
 - A high-performance, zero-allocation Go daemon (`collector-agent`) parses Linux host metrics directly from `/proc` (`/proc/stat`, `/proc/meminfo`, `/proc/diskstats`, `/proc/net/dev`), exposes standard Prometheus metrics on `:9100/metrics`, and pushes critical resource spikes (`cpu_spike`, `memory_pressure`, `io_wait`) over an asynchronous batched client.
 - A high-throughput async Python FastAPI service (`control-plane`) backed by PostgreSQL (SQLAlchemy async + asyncpg) and Redis (token-bucket rate limiting and anomaly de-duplication).
 - An AI-assisted root-cause diagnosis engine powered by the **Google Gemini API** (`google-genai` async client with non-blocking thread offload), strict timeouts, and a deterministic rule-based SRE heuristic fallback.
-- Pre-configured Grafana dashboards, Prometheus alerting rules, and hardened production Kubernetes manifests (DaemonSet + Deployment + HPA + PDB + least-privilege RBAC).
+- Pre-configured Grafana dashboards, Prometheus alerting rules, and Kubernetes manifests (DaemonSet + Deployment + HPA + PDB + least-privilege RBAC).
 
 ---
 
@@ -42,8 +44,19 @@ flowchart LR
 |---|---|---|
 | **Collector Agent** | [`collector-agent/`](collector-agent) | Zero-allocation Go daemon; multi-stage `scratch` container image (< 3 MB) |
 | **Control Plane** | [`control-plane/`](control-plane) | FastAPI, Pydantic v2 schemas, asyncpg, Redis token-bucket, Gemini AI analyzer |
-| **Deployments & SRE** | [`deployments/`](deployments) | Docker Compose stack, Prometheus alerts, Grafana dashboards, hardened Kubernetes manifests |
+| **Deployments & SRE** | [`deployments/`](deployments) | Docker Compose stack, Prometheus alerts, Grafana dashboards, Kubernetes manifests |
 | **E2E Simulation** | [`scripts/`](scripts) | Automated incident generator and load verification script (`simulate_incident.sh`) |
+
+---
+
+## Design Decisions
+
+- **Direct `/proc` parsing over third-party libraries:** The collector reads `/proc/stat`, `/proc/meminfo`, `/proc/diskstats`, and `/proc/net/dev` directly using pooled 32 KB byte buffers (`sync.Pool`) and byte-slice integer parsing. This removes external dependencies, avoids heap allocations in the scrape hot path (0 B/op in benchmarks), and keeps agent idle RSS under 10 MB.
+- **Dual observability path (pull + push):** Prometheus scraping (`:9100/metrics`) handles regular periodic metric sampling and historical timeseries aggregation. In parallel, the agent detects resource spikes in real time and pushes anomaly events directly to the control plane, ensuring sub-second incident alerts without waiting for the next scrape interval.
+- **Per-kind cooldowns and batching:** To prevent alert storms during sustained host load, the agent enforces per-kind cooldown periods (default 60s) and batches anomaly events before sending them asynchronously via a bounded queue and background worker.
+- **Deterministic SRE fallback for AI root-cause analysis:** External LLM calls can time out, exceed rate limits (HTTP 429), or fail during network partitions. The control plane implements a rule-based fallback heuristic (`fallback_diagnosis`) mapping correlated event signatures (e.g. concurrent `memory_pressure` and `io_wait` to swap/page-cache thrashing) to guarantee reliable, instant diagnosis even when offline.
+- **Redis token-bucket rate limiting and deduplication:** The ingestion API uses Redis to throttle incoming telemetry and deduplicate identical anomaly alerts within a configurable TTL window (default 300s), protecting the PostgreSQL database from write floods.
+- **Minimal static container footprint:** The Go collector agent is built with `CGO_ENABLED=0` and deployed on `scratch` (< 3 MB container), removing package managers, shells, and dynamic libraries to minimize attack surface on host nodes.
 
 ---
 
@@ -151,11 +164,11 @@ Pre-provisioned alert definitions are located in [`deployments/prometheus/alerts
 
 ---
 
-## Kubernetes Production Hardening & Security Posture
+## Kubernetes Deployment & Security Configuration
 
-Manifests in [`deployments/k8s/`](deployments/k8s/) enforce enterprise Kubernetes security standards:
+Manifests in [`deployments/k8s/`](deployments/k8s/) enforce Kubernetes security standards:
 
-### Collector DaemonSet Hardening
+### Collector DaemonSet Security Configuration
 - **Host Namespace Isolation**: Although `hostPID: true` and `/proc` hostPath mounts are required to inspect the host kernel metrics, the container is strictly locked down:
   - `readOnlyRootFilesystem: true`
   - `allowPrivilegeEscalation: false`
@@ -166,8 +179,8 @@ Manifests in [`deployments/k8s/`](deployments/k8s/) enforce enterprise Kubernete
 - **RBAC**: Dedicated `ServiceAccount` with `automountServiceAccountToken: false`.
 - **Resource Constraints**: Requests: 10m CPU / 16Mi Memory; Limits: 100m CPU / 48Mi Memory.
 
-### Control Plane Deployment Hardening
-- **Container Hardening**:
+### Control Plane Deployment Security Configuration
+- **Container Security Context**:
   - Non-root UID/GID: `10001:10001`
   - `readOnlyRootFilesystem: true` with a dedicated scratch `emptyDir` mounted at `/tmp`
   - `allowPrivilegeEscalation: false`, all Linux capabilities dropped (`drop: ["ALL"]`)
